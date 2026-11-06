@@ -9,6 +9,7 @@ interface Todo {
   type?: string
   dueDate?: string | null
   notes?: string
+  sourceLink?: string | null
   createdAt?: string
 }
 
@@ -139,8 +140,8 @@ onBeforeUnmount(() => {
     </p>
 
     <p v-else-if="todos.length === 0" class="todo-empty">
-      No tasks yet. New homework and essay announcements will appear here
-      automatically.
+      No announcements yet. Forward a class announcement to the bot and it will
+      appear here automatically.
     </p>
 
     <template v-else>

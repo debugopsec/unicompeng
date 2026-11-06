@@ -8,6 +8,8 @@ interface Todo {
   type?: string
   dueDate?: string | null
   notes?: string
+  sourceLink?: string | null
+  createdAt?: string
 }
 
 const props = defineProps<{
@@ -27,6 +29,7 @@ const typeLabels: Record<string, string> = {
   quiz: 'Quiz',
   exam: 'Exam',
   lab: 'Lab',
+  announcement: 'Announcement',
   other: 'Task'
 }
 
@@ -57,6 +60,26 @@ const due = computed(() => {
   if (diff === 1) return { label: `Due tomorrow · ${formatted}`, className: 'soon' }
   return { label: `Due ${formatted}`, className: 'upcoming' }
 })
+
+const addedLabel = computed(() => {
+  if (!props.todo.createdAt) return 'Announcement'
+
+  const date = new Date(props.todo.createdAt)
+  if (Number.isNaN(date.getTime())) return 'Announcement'
+
+  return `Announced ${date.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  })}`
+})
+
+const safeSourceLink = computed(() => {
+  const value = props.todo.sourceLink
+  return typeof value === 'string' && /^https?:\/\//i.test(value)
+    ? value
+    : null
+})
 </script>
 
 <template>
@@ -79,7 +102,19 @@ const due = computed(() => {
       <p v-if="todo.notes" class="todo-notes">{{ todo.notes }}</p>
 
       <div class="todo-meta">
-        <span class="todo-due" :class="due.className">{{ due.label }}</span>
+        <span
+          v-if="todo.type === 'announcement'"
+          class="todo-due none"
+        >{{ addedLabel }}</span>
+        <span v-else class="todo-due" :class="due.className">{{ due.label }}</span>
+        <a
+          v-if="safeSourceLink"
+          :href="safeSourceLink"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Open announcement
+        </a>
       </div>
     </div>
   </li>
@@ -156,6 +191,7 @@ const due = computed(() => {
   line-height: 1.6;
   color: var(--vp-c-text-2);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .todo-meta {
@@ -186,5 +222,14 @@ const due = computed(() => {
 
 .todo-due.upcoming {
   color: var(--vp-c-text-2);
+}
+
+.todo-meta a {
+  color: var(--vp-c-brand-1);
+  text-decoration: none;
+}
+
+.todo-meta a:hover {
+  text-decoration: underline;
 }
 </style>

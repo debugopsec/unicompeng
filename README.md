@@ -14,17 +14,20 @@ The site is served at <http://localhost:5173/unicompeng/>.
 
 ## How the Telegram watcher works
 
-1. A Telegram bot listens to the class announcements channel/group.
-2. Each new message is checked for homework, essays, reports, quizzes, labs,
-   projects, and other deliverables. A single message containing a weekly list
-   is split into separate tasks by day and course.
-3. Extracted tasks are written to `public/todos.json`.
-4. The `/todo` page reads that file and refreshes every 20 seconds.
+1. A Telegram bot receives messages forwarded to it.
+2. By default (`WATCHER_MODE=raw`), each forwarded message is copied into
+   `public/todos.json` as one item, preserving line breaks and emojis.
+3. The `/todo` page reads that file and refreshes every 20 seconds.
 
-Without an AI key, the watcher uses keyword and day-heading rules. They work
-well for clearly formatted lists, but they are less accurate than AI for mixed
-Arabic/English text and relative deadlines. With an AI key, it extracts titles,
-courses, types, and due dates much more reliably.
+To restore the older behavior that splits messages into categorized homework,
+quiz, lab, and exam tasks, set this in `.env`:
+
+```text
+WATCHER_MODE=extract
+```
+
+In `extract` mode, an AI key is strongly recommended. Without one, the watcher
+uses keyword and day-heading rules, which can miss natural-language wording.
 
 ## Telegram setup
 
@@ -115,7 +118,10 @@ original link is unavailable.
 This is manual — one forward per announcement — but it needs no admin rights
 and does not put your Telegram account at risk.
 
-## AI extraction (recommended)
+## AI extraction (only for extract mode)
+
+This is only used when `WATCHER_MODE=extract`. The default raw mode copies
+messages as-is.
 
 The keyword fallback misses nuanced Arabic announcements and relative dates.
 To enable AI extraction, add an OpenAI-compatible key to `.env`:
@@ -145,8 +151,24 @@ npm run watch:telegram:test
 | `npm run watch:telegram:id` | Print the chat ID of a channel/group |
 | `npm run watch:telegram:once` | Process pending updates once, then exit |
 | `npm run watch:telegram:test` | Test task extraction on a sample message |
+| `npm run import:announcement -- --file <path>` | Import a pasted announcement text file |
 | `npm run sanitize:todos` | Re-sanitize the public task list |
 | `npm run test:pii` | Test PII redaction on sample strings |
+
+## Importing missed announcements
+
+The watcher can only process messages that are forwarded to the bot while it is
+running. It cannot read private channel history.
+
+To backfill an announcement you missed, save its text to a `.txt` file and run:
+
+```powershell
+npm run import:announcement -- --file "C:\path\to\announcement.txt"
+```
+
+The file can contain one announcement or a longer list. In raw mode it is copied
+as one announcement with its original formatting; in extract mode it is split
+into tasks. Duplicates are skipped.
 
 ## Start the watcher automatically on Windows
 
@@ -174,19 +196,21 @@ is tracked so the site always has a task file; the watcher updates it in place.
 
 ## Public data and PII
 
-`public/todos.json` is served to every visitor. Each task contains only:
+`public/todos.json` is served to every visitor. Each item contains only:
 
 ```text
-id, title, course, type, dueDate, notes, createdAt, completed
+id, title, course, type, dueDate, notes, sourceLink, createdAt, completed
 ```
 
-Telegram source metadata, message links, chat IDs, chat titles, and usernames
-are never written to it. The `id` is a truncated SHA-256 hash, not a Telegram
-message or chat ID.
+Telegram chat titles and bot metadata are not written. Each raw announcement
+includes a `sourceLink` to the original message; the task `id` is a truncated
+SHA-256 hash, not a Telegram message ID.
 
-The watcher also removes URLs, email addresses, phone numbers, long numeric IDs,
-and `@username` mentions from public task text. To redact specific names or
-terms, add them to `.env` as a comma-separated list:
+Raw announcements keep their original line breaks, emojis, and links. Each raw
+announcement also has a `sourceLink` to the original message, shown on the site
+as **Open announcement**. Email addresses, phone numbers, long numeric IDs,
+`@username` mentions, and the word Telegram are still redacted. To redact
+specific names or terms, add them to `.env` as a comma-separated list:
 
 ```text
 PII_REDACT_TERMS=Name One,Name Two
@@ -224,8 +248,13 @@ for automatic live updates.
 
 ## Notes and limitations
 
+- The watcher only sees messages forwarded to the bot **while it is running**.
+  It cannot read private channel history. Use `import:announcement` for older
+  announcements.
 - The watcher processes **text and captions**. It does not parse the contents of
   attached PDFs or images.
+- Without an AI key, extract mode uses keyword rules and can miss ambiguous
+  announcements. Raw mode does not need AI.
 - The site is static. While `npm run docs:dev` is running, new tasks appear
   without a rebuild. A deployed production build needs to be rebuilt and
   redeployed to pick up newly added tasks.

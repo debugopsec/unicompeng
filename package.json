@@ -8,7 +8,8 @@
     "watch:telegram:once": "node scripts/telegram-watcher.mjs --once",
     "watch:telegram:test": "node scripts/telegram-watcher.mjs --test",
     "sanitize:todos": "node scripts/telegram-watcher.mjs --sanitize",
-    "test:pii": "node scripts/telegram-watcher.mjs --test-pii"
+    "test:pii": "node scripts/telegram-watcher.mjs --test-pii",
+    "import:announcement": "node scripts/telegram-watcher.mjs --import"
   },
   "devDependencies": {
     "vitepress": "^1.6.4"

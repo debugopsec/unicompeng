@@ -23,6 +23,7 @@ const TEST = process.argv.includes('--test')
 const ONCE = process.argv.includes('--once')
 const SANITIZE = process.argv.includes('--sanitize')
 const TEST_PII = process.argv.includes('--test-pii')
+const IMPORT = process.argv.includes('--import')
 
 if (fs.existsSync(ENV_FILE)) {
   try {
@@ -43,6 +44,7 @@ const CHAT_IDS = new Set(
 const LLM_KEY = (process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '').trim()
 const LLM_BASE = (process.env.LLM_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '')
 const LLM_MODEL = (process.env.LLM_MODEL || 'gpt-4o-mini').trim()
+const WATCHER_MODE = (process.env.WATCHER_MODE || 'raw').toLowerCase()
 
 const ALLOWED_TYPES = new Set([
   'homework',
@@ -124,13 +126,14 @@ const DAY_HEADING_RE = new RegExp(
 )
 
 const TASK_TYPE_PATTERNS = [
-  { type: 'quiz', pattern: /كوز|\bquiz\b/i },
-  { type: 'exam', pattern: /امتحان|اختبار|\bexam\b|\btest\b/i },
-  { type: 'homework', pattern: /واجب|\b(?:homework|assignment|problem\s*set|worksheet)\b|مسائل|ورقة عمل/i },
-  { type: 'report', pattern: /تقرير|\breport\b/i },
-  { type: 'essay', pattern: /مقال|\bessay\b|\barticle\b/i },
-  { type: 'project', pattern: /مشروع|\bproject\b/i },
-  { type: 'lab', pattern: /مختبر|\blab(?:oratory)?\b/i }
+  { type: 'quiz', pattern: /كوز|كويز|\bquiz\b/i },
+  { type: 'exam', pattern: /امتحان|اختبار|نصفي|نصف\s*الفصل|نهائي|فاينل|\b(?:exam|test|midterm|mid-term|final)\b/i },
+  { type: 'homework', pattern: /واجب|\b(?:homework|assignment|problem\s*set|worksheet|sheet)\b|مسائل|ورقة عمل/i },
+  { type: 'report', pattern: /تقرير|بحث|\b(?:report|research)\b/i },
+  { type: 'essay', pattern: /مقال|\b(?:essay|article)\b/i },
+  { type: 'project', pattern: /مشروع|عرض|\b(?:project|presentation)\b/i },
+  { type: 'lab', pattern: /مختبر|\blab(?:oratory)?\b/i },
+  { type: 'other', pattern: /تسليم|آخر\s*موعد|\b(?:submission|submit|deadline)\b/i }
 ]
 
 const GENERIC_TASK_HEADING =
@@ -188,6 +191,36 @@ function sanitizePublicText(value) {
     .replace(/[ \t]+/g, ' ')
     .replace(/\s*\n\s*/g, '\n')
     .trim()
+}
+
+function sanitizeRawMessage(value) {
+  let text = String(value || '')
+
+  for (const term of PII_TERMS) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    text = text.replace(new RegExp(escaped, 'gi'), '[redacted]')
+  }
+
+  return text
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, ' [email removed] ')
+    .replace(/@[\p{L}\p{N}_]{3,}/gu, ' [username removed] ')
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, (match) => {
+      const digitCount = match.replace(/\D/g, '').length
+      return digitCount >= 9 ? ' [phone removed] ' : match
+    })
+    .replace(/[\u0660-\u0669\u06F0-\u06F9]{7,}/g, ' [number removed] ')
+    .replace(/\b\d{7,}\b/g, ' [number removed] ')
+    .replace(/telegram|تلغرام|تليجرام|تليغرام|تليكرام|تلجرام/gi, '[redacted]')
+    .replace(/\r\n/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function safeSourceLink(value) {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return /^https?:\/\//i.test(trimmed) ? trimmed : null
 }
 
 function createPublicTaskId(sourceKey, index) {
@@ -282,6 +315,39 @@ function getMessageText(message) {
   return parts.join('\n').trim()
 }
 
+function getChatMessageLink(chat, messageId) {
+  if (!chat || !messageId) return null
+
+  if (chat.username) {
+    return `https://t.me/${chat.username}/${messageId}`
+  }
+
+  const chatId = String(chat.id)
+  if (chatId.startsWith('-100')) {
+    return `https://t.me/c/${chatId.slice(4)}/${messageId}`
+  }
+
+  return null
+}
+
+function getMessageLink(message) {
+  if (message.forward_origin?.type === 'channel' && message.forward_origin.chat) {
+    return getChatMessageLink(
+      message.forward_origin.chat,
+      message.forward_origin.message_id
+    )
+  }
+
+  if (message.forward_from_chat) {
+    return getChatMessageLink(
+      message.forward_from_chat,
+      message.forward_from_message_id
+    )
+  }
+
+  return getChatMessageLink(message.chat, message.message_id)
+}
+
 function getSourceKey(message) {
   if (message.forward_origin?.type === 'channel' && message.forward_origin.chat) {
     const chatId = String(message.forward_origin.chat.id).replace(/^-/, '')
@@ -338,15 +404,33 @@ function detectDueDate(text, referenceDate = new Date()) {
     return toIsoDate(year, Number(match[2]), Number(match[1]))
   }
 
-  // 15 November 2026 / 15 نوفمبر
+  // 15 November 2026 / 15th of November / 15 نوفمبر
   const monthNames =
     'jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|يناير|فبراير|مارس|أبريل|ابريل|مايو|يونيو|يوليو|أغسطس|اغسطس|سبتمبر|أكتوبر|اكتوبر|نوفمبر|ديسمبر'
   match = text.match(
-    new RegExp(`(?:^|\\s)(\\d{1,2})\\s+(${monthNames})(?:\\s*,?\\s*(20\\d{2}))?`, 'iu')
+    new RegExp(
+      `(?:^|\\s)(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?\\.?(${monthNames})\\.?(?:\\s*,?\\s*(20\\d{2}))?`,
+      'iu'
+    )
   )
   if (match) {
     const month = MONTH_NUMBERS[match[2].toLowerCase()]
     const year = match[3] ? Number(match[3]) : referenceDate.getFullYear()
+    const result = toIsoDate(year, month, Number(match[1]))
+    if (result) return result
+  }
+
+  // November 15, 2026 / Nov 15 / نوفمبر 15
+  match = text.match(
+    new RegExp(
+      `(?:^|\\s)(?:${monthNames})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?!\\d)(?:\\s*,?\\s*(20\\d{2}))?`,
+      'iu'
+    )
+  )
+  if (match) {
+    const monthName = match[0].trim().split(/\s+/)[0].replace(/\.$/, '')
+    const month = MONTH_NUMBERS[monthName.toLowerCase()]
+    const year = match[2] ? Number(match[2]) : referenceDate.getFullYear()
     const result = toIsoDate(year, month, Number(match[1]))
     if (result) return result
   }
@@ -362,6 +446,30 @@ function detectDueDate(text, referenceDate = new Date()) {
       date.setDate(date.getDate() + 2)
     }
     return toIsoDate(date.getFullYear(), date.getMonth() + 1, date.getDate())
+  }
+
+  return null
+}
+
+const ENGLISH_WEEKDAYS = [
+  'sunday',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday'
+]
+
+function detectWeekdayDate(text, referenceDate = new Date()) {
+  const arabicDay = findWeekday(text)
+  if (arabicDay !== null) return nextWeekdayDate(arabicDay, referenceDate)
+
+  const lower = text.toLowerCase()
+  for (let day = 0; day < ENGLISH_WEEKDAYS.length; day += 1) {
+    if (new RegExp(`\\b${ENGLISH_WEEKDAYS[day]}\\b`).test(lower)) {
+      return nextWeekdayDate(day, referenceDate)
+    }
   }
 
   return null
@@ -493,8 +601,9 @@ function makeRuleTitle(clause, typeMatch, course, type) {
   title = cleanAnnouncementText(title)
   title = title.split(/[.!?؟]\s/u)[0] || title
   title = title.split(
-    /\s+(?:لان|لأن|حيث|بسبب|كروب|فقط|يروح|يسلمه|بأي يوم|و ورقي)/iu
+    /\s+(?:لان|لأن|حيث|بسبب|كروب|فقط|يروح|يسلمه|بأي يوم|و ورقي|due|deadline)(?=\s|$)/iu
   )[0]
+  title = title.replace(/\s+(?:يوم|الموافق)\s+(?=\d)/u, '')
   title = title.replace(/[.:!?،؛]+$/u, '').trim()
 
   if (title.length < 4) {
@@ -540,6 +649,10 @@ function buildRuleTask(clause, section, referenceDate, seen) {
     dueDate = nextWeekdayDate(section.day, referenceDate)
   }
 
+  if (!dueDate && section.day === null) {
+    dueDate = detectWeekdayDate(clause, referenceDate)
+  }
+
   if (!dueDate && /today|اليوم/i.test(clause)) {
     dueDate = toIsoDate(
       referenceDate.getFullYear(),
@@ -568,10 +681,22 @@ function extractWithKeywords(text, referenceDate = new Date()) {
   for (const section of sections) {
     const body = stripFirstDayHeading(section.text)
     const clauses = splitClauses(body)
+    let lastTask = null
 
     for (const clause of clauses) {
       const task = buildRuleTask(clause, section, referenceDate, seen)
-      if (task) tasks.push(task)
+
+      if (task) {
+        tasks.push(task)
+        lastTask = task
+      } else if (lastTask && !lastTask.dueDate) {
+        const dateOnly =
+          detectDueDate(clause, referenceDate) ||
+          detectWeekdayDate(clause, referenceDate)
+
+        if (dateOnly) lastTask.dueDate = dateOnly
+      }
+
       if (tasks.length >= 10) return tasks
     }
   }
@@ -715,6 +840,110 @@ async function extractTasks(text, referenceDate = new Date()) {
   return extractWithKeywords(text, referenceDate)
 }
 
+function appendRawAnnouncement(text, sourceKey, createdAt, sourceLink = null) {
+  const todos = readTodos()
+  const id = createPublicTaskId(sourceKey, 0)
+  const safeLink = safeSourceLink(sourceLink)
+
+  const existingById = todos.find((todo) => todo.id === id)
+  if (existingById) {
+    if (safeLink && !existingById.sourceLink) {
+      existingById.sourceLink = safeLink
+      writeJson(TODOS_FILE, todos)
+    }
+    return 0
+  }
+
+  const body = sanitizeRawMessage(text)
+  if (!body) return 0
+
+  const existingByText = todos.find(
+    (todo) => todo.type === 'announcement' && todo.notes === body
+  )
+
+  if (existingByText) {
+    if (safeLink && !existingByText.sourceLink) {
+      existingByText.sourceLink = safeLink
+      writeJson(TODOS_FILE, todos)
+    }
+    return 0
+  }
+
+  const lines = body.split('\n')
+  const firstLineIndex = lines.findIndex((line) => line.trim())
+  let title = 'Class announcement'
+  let notes = body
+
+  if (firstLineIndex !== -1) {
+    const firstLine = lines[firstLineIndex].trim()
+    const isOnlyRedaction = /^\[[^\]]+ removed\]$/i.test(firstLine)
+
+    if (firstLine.length <= 120 && !isOnlyRedaction) {
+      title = firstLine
+      notes = lines.slice(firstLineIndex + 1).join('\n').trim()
+    }
+  }
+
+  todos.push({
+    id,
+    title,
+    course: '',
+    type: 'announcement',
+    dueDate: null,
+    notes,
+    sourceLink: safeLink,
+    createdAt,
+    completed: false
+  })
+
+  writeJson(TODOS_FILE, todos)
+  return 1
+}
+
+function appendTasks(tasks, sourceKey, createdAt) {
+  const todos = readTodos()
+  let added = 0
+
+  for (const [index, task] of tasks.entries()) {
+    const id = createPublicTaskId(sourceKey, index)
+    const title = sanitizePublicText(task.title)
+    if (!title) continue
+
+    const course = sanitizePublicText(task.course)
+    const notes = sanitizePublicText(task.notes)
+
+    const duplicate = todos.some(
+      (todo) =>
+        todo.id === id ||
+        (todo.title === title &&
+          todo.course === course &&
+          todo.type === task.type &&
+          (todo.dueDate || null) === (task.dueDate || null)) ||
+        (task.type === 'exam' &&
+          todo.type === 'exam' &&
+          todo.course === course &&
+          (todo.dueDate || null) === (task.dueDate || null))
+    )
+
+    if (duplicate) continue
+
+    todos.push({
+      id,
+      title,
+      course,
+      type: task.type,
+      dueDate: task.dueDate,
+      notes,
+      createdAt,
+      completed: false
+    })
+    added += 1
+  }
+
+  if (added > 0) writeJson(TODOS_FILE, todos)
+  return added
+}
+
 async function handleUpdate(update) {
   const message = update.channel_post || update.message
   if (!message) return
@@ -740,7 +969,24 @@ async function handleUpdate(update) {
     ? new Date(originTimestamp * 1000)
     : new Date()
 
-  log(`New message: ${preview(sanitizePublicText(text))}`)
+  log('New message received.')
+
+  if (WATCHER_MODE === 'raw') {
+    const added = appendRawAnnouncement(
+      text,
+      getSourceKey(message),
+      referenceDate.toISOString(),
+      getMessageLink(message)
+    )
+
+    if (added === 0) {
+      log('This announcement is already in the list.')
+      return
+    }
+
+    log('Copied forwarded announcement to the to-do list.')
+    return
+  }
 
   let tasks
   try {
@@ -756,37 +1002,17 @@ async function handleUpdate(update) {
     return
   }
 
-  const todos = readTodos()
-  const createdAt = new Date().toISOString()
-  const sourceKey = getSourceKey(message)
-  let added = 0
-
-  for (const [index, task] of tasks.entries()) {
-    const id = createPublicTaskId(sourceKey, index)
-    if (todos.some((todo) => todo.id === id)) continue
-
-    const title = sanitizePublicText(task.title)
-    if (!title) continue
-
-    todos.push({
-      id,
-      title,
-      course: sanitizePublicText(task.course),
-      type: task.type,
-      dueDate: task.dueDate,
-      notes: sanitizePublicText(task.notes),
-      createdAt,
-      completed: false
-    })
-    added += 1
-  }
+  const added = appendTasks(
+    tasks,
+    getSourceKey(message),
+    new Date().toISOString()
+  )
 
   if (added === 0) {
     log('These tasks are already in the to-do list.')
     return
   }
 
-  writeJson(TODOS_FILE, todos)
   log(
     `Added ${added} task(s): ` +
       tasks.map((task) => `"${sanitizePublicText(task.title)}"`).join(', ')
@@ -796,8 +1022,13 @@ async function handleUpdate(update) {
 async function runWatcher() {
   const state = readState()
   log(
-    `Watching ${CHAT_IDS.size} chat(s). AI extraction: ` +
-      (LLM_KEY ? `on (${LLM_MODEL})` : 'off (keyword rules)')
+    `Watching ${CHAT_IDS.size} chat(s). Mode: ` +
+      (WATCHER_MODE === 'raw' ? 'raw copy' : 'task extraction') +
+      (WATCHER_MODE === 'raw'
+        ? ''
+        : `. AI extraction: ${
+            LLM_KEY ? `on (${LLM_MODEL})` : 'off (keyword rules)'
+          }`)
   )
 
   while (true) {
@@ -904,16 +1135,24 @@ async function runSanitize() {
     if (seen.has(id)) continue
     seen.add(id)
 
-    const title = sanitizePublicText(todo.title)
+    const isAnnouncement = todo.type === 'announcement'
+    const title = isAnnouncement
+      ? sanitizeRawMessage(todo.title)
+      : sanitizePublicText(todo.title)
     if (!title) continue
 
     sanitized.push({
       id,
       title,
-      course: sanitizePublicText(todo.course || 'General'),
-      type: todo.type || 'other',
-      dueDate: todo.dueDate || null,
-      notes: sanitizePublicText(todo.notes || ''),
+      course: isAnnouncement
+        ? ''
+        : sanitizePublicText(todo.course || 'General'),
+      type: isAnnouncement ? 'announcement' : todo.type || 'other',
+      dueDate: isAnnouncement ? null : todo.dueDate || null,
+      notes: isAnnouncement
+        ? sanitizeRawMessage(todo.notes || '')
+        : sanitizePublicText(todo.notes || ''),
+      sourceLink: isAnnouncement ? safeSourceLink(todo.sourceLink) : null,
       createdAt: todo.createdAt || new Date().toISOString(),
       completed: Boolean(todo.completed)
     })
@@ -922,6 +1161,82 @@ async function runSanitize() {
   writeJson(TODOS_FILE, sanitized)
   log(`Sanitized ${sanitized.length} task(s).`)
   console.log(JSON.stringify(sanitized, null, 2))
+}
+
+async function runImport() {
+  const fileIndex = process.argv.indexOf('--file')
+  if (fileIndex === -1) {
+    console.error('Import mode requires --file <announcement.txt>.')
+    process.exit(1)
+  }
+
+  const filePath = process.argv[fileIndex + 1]
+  if (!filePath) {
+    console.error('Import mode requires a file path after --file.')
+    process.exit(1)
+  }
+
+  const fullPath = path.resolve(ROOT, filePath)
+  const text = fs.readFileSync(fullPath, 'utf8').trim()
+  if (!text) {
+    console.error(`The announcement file is empty: ${fullPath}`)
+    process.exit(1)
+  }
+
+  log(
+    WATCHER_MODE === 'raw'
+      ? 'Import mode: copying raw announcement text.'
+      : `Import mode. AI extraction: ` +
+          (LLM_KEY ? `on (${LLM_MODEL})` : 'off (keyword rules)')
+  )
+
+  if (WATCHER_MODE === 'raw') {
+    const sourceKey = `import-${crypto
+      .createHash('sha256')
+      .update(text)
+      .digest('hex')
+      .slice(0, 16)}`
+    const added = appendRawAnnouncement(
+      text,
+      sourceKey,
+      new Date().toISOString(),
+      null
+    )
+
+    if (added === 0) {
+      log('No new announcement added (duplicate).')
+      return
+    }
+
+    log('Imported announcement.')
+    return
+  }
+
+  const tasks = await extractTasks(text, new Date())
+  if (tasks.length === 0) {
+    log('No task detected in that announcement.')
+    return
+  }
+
+  const sourceKey = `import-${crypto
+    .createHash('sha256')
+    .update(text)
+    .digest('hex')
+    .slice(0, 16)}`
+  const added = appendTasks(tasks, sourceKey, new Date().toISOString())
+
+  if (added === 0) {
+    log('No new tasks added (they already exist in the to-do list).')
+    return
+  }
+
+  log(`Imported ${added} task(s):`)
+  for (const task of tasks) {
+    log(
+      `- ${sanitizePublicText(task.title)} (${task.course}, ${task.type}` +
+        `${task.dueDate ? `, due ${task.dueDate}` : ''})`
+    )
+  }
 }
 
 async function runTest() {
@@ -953,6 +1268,11 @@ async function main() {
 
   if (SANITIZE) {
     await runSanitize()
+    return
+  }
+
+  if (IMPORT) {
+    await runImport()
     return
   }
 
