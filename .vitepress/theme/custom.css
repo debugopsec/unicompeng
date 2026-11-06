@@ -51,6 +51,65 @@
   color: var(--vp-c-text-2);
 }
 
+.quick-links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+  max-width: 900px;
+  margin: 0 auto 32px;
+}
+
+.vp-doc .quick-link {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 22px;
+  border: 1px solid var(--vp-c-brand-1);
+  border-radius: 14px;
+  background: linear-gradient(
+    135deg,
+    var(--vp-c-brand-soft),
+    var(--vp-c-bg-soft)
+  );
+  color: var(--vp-c-text-1);
+  text-decoration: none;
+  transition:
+    border-color 0.25s,
+    box-shadow 0.25s,
+    transform 0.25s;
+}
+
+.vp-doc .quick-link:hover {
+  border-color: var(--vp-c-brand-2);
+  color: var(--vp-c-text-1);
+  text-decoration: none;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.quick-link-icon {
+  flex: none;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.quick-link-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.quick-link-ar {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.quick-link-en {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vp-c-text-2);
+}
+
 .schedule-page .vp-doc table {
   direction: rtl;
 }
@@ -58,4 +117,94 @@
 .schedule-page .vp-doc th,
 .schedule-page .vp-doc td {
   text-align: right;
+}
+
+@media (max-width: 767px) {
+  body .VPNavBar .container > .title {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: calc(100% - 60px);
+  }
+
+  body .VPNavBar .VPNavBarTitle .title {
+    width: auto;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  body .VPNavBar .content {
+    flex: 0 0 auto;
+  }
+
+  body .VPNavBar .VPNavBarHamburger {
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--vp-c-divider);
+    border-radius: 10px;
+    background-color: var(--vp-c-bg-soft);
+  }
+
+  body .VPNavBar .VPNavBarHamburger:hover {
+    border-color: var(--vp-c-brand-1);
+  }
+
+  body .VPNavBar .VPNavBarHamburger .container {
+    width: 18px;
+    height: 16px;
+  }
+
+  body .VPNavBar .VPNavBarHamburger .top,
+  body .VPNavBar .VPNavBarHamburger .middle,
+  body .VPNavBar .VPNavBarHamburger .bottom {
+    width: 18px;
+  }
+
+  body .VPNavBar .VPNavBarHamburger .middle {
+    top: 7px;
+  }
+
+  body .VPNavBar .VPNavBarHamburger .bottom {
+    top: 14px;
+  }
+}
+
+@media (max-width: 959px) {
+  .VPLocalNav .menu {
+    margin: 8px 16px;
+    padding: 8px 16px;
+    border: 1px solid var(--vp-c-divider);
+    border-radius: 999px;
+    background-color: var(--vp-c-bg-soft);
+    color: var(--vp-c-text-1);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .VPLocalNav .menu:hover {
+    border-color: var(--vp-c-brand-1);
+    color: var(--vp-c-brand-1);
+  }
+
+  .VPLocalNav .menu-icon {
+    margin-right: 8px;
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 639px) {
+  .VPHome .VPHero .name,
+  .VPHome .VPHero .text {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .VPHome .VPHero .name,
+  .VPHome .VPHero .text {
+    max-width: 100%;
+    font-size: 28px;
+    line-height: 1.25;
+  }
 }
