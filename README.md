@@ -145,6 +145,8 @@ npm run watch:telegram:test
 | `npm run watch:telegram:id` | Print the chat ID of a channel/group |
 | `npm run watch:telegram:once` | Process pending updates once, then exit |
 | `npm run watch:telegram:test` | Test task extraction on a sample message |
+| `npm run sanitize:todos` | Re-sanitize the public task list |
+| `npm run test:pii` | Test PII redaction on sample strings |
 
 ## Start the watcher automatically on Windows
 
@@ -152,8 +154,8 @@ npm run watch:telegram:test
 2. To start it at login, open **Task Scheduler** → **Create Task**.
 3. Add a trigger: **At log on**.
 4. Add an action: **Start a program** → select
-   `C:\Users\wallp\Documents\unicompeng\start-telegram-watcher.bat`.
-5. Set **Start in** to `C:\Users\wallp\Documents\unicompeng`.
+   `<project-folder>\start-telegram-watcher.bat`.
+5. Set **Start in** to `<project-folder>`.
 
 Keep the PC awake and online for instant processing. If Telegram is unreachable
 or the PC is asleep, Telegram keeps updates for 24 hours and the watcher
@@ -163,12 +165,32 @@ processes them when it resumes.
 
 | File | Purpose |
 | --- | --- |
-| `public/todos.json` | Task list read by the site |
-| `.data/telegram-state.json` | Last processed Telegram update |
-| `.data/failed-announcements.json` | Messages that could not be extracted |
+| `public/todos.json` | Sanitized task list served to the website |
+| `.data/telegram-state.json` | Last processed update |
+| `.data/failed-announcements.json` | Sanitized snippets that could not be extracted |
 
 `.env`, `.data/`, and `node_modules/` are ignored by Git. `public/todos.json`
 is tracked so the site always has a task file; the watcher updates it in place.
+
+## Public data and PII
+
+`public/todos.json` is served to every visitor. Each task contains only:
+
+```text
+id, title, course, type, dueDate, notes, createdAt, completed
+```
+
+Telegram source metadata, message links, chat IDs, chat titles, and usernames
+are never written to it. The `id` is a truncated SHA-256 hash, not a Telegram
+message or chat ID.
+
+The watcher also removes URLs, email addresses, phone numbers, long numeric IDs,
+and `@username` mentions from public task text. To redact specific names or
+terms, add them to `.env` as a comma-separated list:
+
+```text
+PII_REDACT_TERMS=Name One,Name Two
+```
 
 ## Deploy to GitHub Pages
 

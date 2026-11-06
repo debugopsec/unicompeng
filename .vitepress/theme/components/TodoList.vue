@@ -9,7 +9,6 @@ interface Todo {
   type?: string
   dueDate?: string | null
   notes?: string
-  sourceLink?: string | null
   createdAt?: string
 }
 
@@ -89,7 +88,7 @@ async function load(silent = false) {
   } catch {
     if (!silent || !lastUpdated.value) {
       error.value =
-        'Could not load the task list. Make sure public/todos.json exists and the Telegram watcher is running.'
+        'Could not load the task list. Make sure public/todos.json exists and the task watcher is running.'
     }
   } finally {
     if (!silent) loading.value = false
@@ -178,8 +177,8 @@ onBeforeUnmount(() => {
       </details>
 
       <p class="todo-hint">
-        Completion is saved in this browser only. The task list itself is
-        updated from Telegram.
+        Completion is saved in this browser only. The task list is updated
+        automatically.
       </p>
     </template>
   </div>

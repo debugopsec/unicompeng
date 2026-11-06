@@ -7,6 +7,7 @@
  *
  * See README.md for setup instructions.
  */
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,6 +21,8 @@ const FAILED_FILE = path.join(ROOT, '.data', 'failed-announcements.json')
 const DISCOVER = process.argv.includes('--discover')
 const TEST = process.argv.includes('--test')
 const ONCE = process.argv.includes('--once')
+const SANITIZE = process.argv.includes('--sanitize')
+const TEST_PII = process.argv.includes('--test-pii')
 
 if (fs.existsSync(ENV_FILE)) {
   try {
@@ -146,6 +149,56 @@ function preview(text, max = 120) {
   return singleLine.length > max ? `${singleLine.slice(0, max - 1)}…` : singleLine
 }
 
+const PII_TERMS = (process.env.PII_REDACT_TERMS || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean)
+
+function sanitizePublicText(value) {
+  let text = String(value || '')
+
+  for (const term of PII_TERMS) {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    text = text.replace(new RegExp(escaped, 'gi'), '[redacted]')
+  }
+
+  return text
+    .replace(
+      /(?:^|\s)(?:أ\.د|دكتور|دكتورة|م\.م|د\.|م\.)\.?\s*[\p{L}]+(?:\s+[\p{L}]+)?/gu,
+      ' [name removed] '
+    )
+    .replace(
+      /(?:^|\s)(?:الطالب|الطالبة)\s+[\p{L}]+(?:\s+[\p{L}]+)?/gu,
+      ' [name removed] '
+    )
+    .replace(
+      /\b(?:Mr|Mrs|Ms|Dr|Prof)\.?\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?/g,
+      ' [name removed] '
+    )
+    .replace(/(?:https?:\/\/|tg:\/\/|www\.|t\.me\/|telegram\.me\/)\S+/gi, ' [link removed] ')
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, ' [email removed] ')
+    .replace(/@[\p{L}\p{N}_]{3,}/gu, ' [username removed] ')
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, (match) => {
+      const digitCount = match.replace(/\D/g, '').length
+      return digitCount >= 9 ? ' [phone removed] ' : match
+    })
+    .replace(/[\u0660-\u0669\u06F0-\u06F9]{7,}/g, ' [number removed] ')
+    .replace(/\b\d{7,}\b/g, ' [number removed] ')
+    .replace(/telegram|تلغرام|تليجرام|تليغرام|تليكرام|تلجرام/gi, '[redacted]')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
+    .trim()
+}
+
+function createPublicTaskId(sourceKey, index) {
+  const hash = crypto
+    .createHash('sha256')
+    .update(`${sourceKey}|${index}`)
+    .digest('hex')
+    .slice(0, 16)
+  return `task-${hash}`
+}
+
 function readJson(file, fallback) {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'))
@@ -181,15 +234,12 @@ function writeState(state) {
   writeJson(STATE_FILE, state)
 }
 
-function saveFailed(message, text, error) {
+function saveFailed(text, error) {
   try {
     const failed = readJson(FAILED_FILE, [])
     failed.push({
       at: new Date().toISOString(),
-      chatId: String(message.chat.id),
-      chatTitle: message.chat.title || '',
-      messageId: message.message_id,
-      text,
+      text: sanitizePublicText(text),
       error: String(error?.message || error)
     })
     writeJson(FAILED_FILE, failed.slice(-100))
@@ -230,41 +280,6 @@ function getMessageText(message) {
   if (message.caption) parts.push(message.caption)
   if (message.document?.file_name) parts.push(`Attachment: ${message.document.file_name}`)
   return parts.join('\n').trim()
-}
-
-function getChatMessageLink(chat, messageId) {
-  if (!chat || !messageId) return null
-
-  if (chat.username) {
-    return `https://t.me/${chat.username}/${messageId}`
-  }
-
-  const chatId = String(chat.id)
-  if (chatId.startsWith('-100')) {
-    return `https://t.me/c/${chatId.slice(4)}/${messageId}`
-  }
-
-  return null
-}
-
-function getMessageLink(message) {
-  // Preserve the original channel link when an announcement is forwarded to
-  // the bot manually (the usual setup when the bot cannot join a channel).
-  if (message.forward_origin?.type === 'channel' && message.forward_origin.chat) {
-    return getChatMessageLink(
-      message.forward_origin.chat,
-      message.forward_origin.message_id
-    )
-  }
-
-  if (message.forward_from_chat) {
-    return getChatMessageLink(
-      message.forward_from_chat,
-      message.forward_from_message_id
-    )
-  }
-
-  return getChatMessageLink(message.chat, message.message_id)
 }
 
 function getSourceKey(message) {
@@ -709,8 +724,8 @@ async function handleUpdate(update) {
     if (!IGNORED_CHATS.has(chatId)) {
       IGNORED_CHATS.add(chatId)
       log(
-        `Ignoring chat ${chatId} (${message.chat.title || message.chat.type}). ` +
-          'Add it to TELEGRAM_CHAT_IDS to watch it.'
+        'Ignoring a message from an unconfigured chat. ' +
+          'Add its ID to TELEGRAM_CHAT_IDS to watch it.'
       )
     }
     return
@@ -725,14 +740,14 @@ async function handleUpdate(update) {
     ? new Date(originTimestamp * 1000)
     : new Date()
 
-  log(`New message in "${message.chat.title || chatId}": ${preview(text)}`)
+  log(`New message: ${preview(sanitizePublicText(text))}`)
 
   let tasks
   try {
     tasks = await extractTasks(text, referenceDate)
   } catch (error) {
     log(`Could not extract tasks: ${error.message}`)
-    saveFailed(message, text, error)
+    saveFailed(text, error)
     return
   }
 
@@ -743,31 +758,23 @@ async function handleUpdate(update) {
 
   const todos = readTodos()
   const createdAt = new Date().toISOString()
-  const sourceLink = getMessageLink(message)
   const sourceKey = getSourceKey(message)
   let added = 0
 
   for (const [index, task] of tasks.entries()) {
-    const id = `tg-${sourceKey}-${index}`
-    const duplicate =
-      todos.some((todo) => todo.id === id) ||
-      (sourceLink &&
-        todos.some(
-          (todo) =>
-            todo.sourceLink === sourceLink &&
-            todo.title === task.title &&
-            todo.course === task.course &&
-            todo.type === task.type
-        ))
+    const id = createPublicTaskId(sourceKey, index)
+    if (todos.some((todo) => todo.id === id)) continue
 
-    if (duplicate) continue
+    const title = sanitizePublicText(task.title)
+    if (!title) continue
 
     todos.push({
       id,
-      ...task,
-      source: 'telegram',
-      sourceLink,
-      chatTitle: message.chat.title || '',
+      title,
+      course: sanitizePublicText(task.course),
+      type: task.type,
+      dueDate: task.dueDate,
+      notes: sanitizePublicText(task.notes),
       createdAt,
       completed: false
     })
@@ -780,7 +787,10 @@ async function handleUpdate(update) {
   }
 
   writeJson(TODOS_FILE, todos)
-  log(`Added ${added} task(s): ${tasks.map((task) => `"${task.title}"`).join(', ')}`)
+  log(
+    `Added ${added} task(s): ` +
+      tasks.map((task) => `"${sanitizePublicText(task.title)}"`).join(', ')
+  )
 }
 
 async function runWatcher() {
@@ -854,6 +864,66 @@ async function runDiscover() {
   }
 }
 
+async function runPiiTest() {
+  const samples = [
+    'واجب الزمن الحقيقي',
+    'كوز مفاجئ',
+    'مختبر المسيطرات الدقيقة',
+    'طلاب الي ما مسلم تقرير اتصالات رقمية',
+    'https://t.me/example/123',
+    '@student test@example.com 07701234567',
+    'د. حازم نوري',
+    'م.م.محمد مبارك',
+    'موعد التسليم 2026-11-10'
+  ]
+
+  for (const sample of samples) {
+    console.log(`${sample}\n  -> ${sanitizePublicText(sample)}`)
+  }
+}
+
+async function runSanitize() {
+  const todos = readTodos()
+  const sanitized = []
+  const seen = new Set()
+
+  for (const todo of todos) {
+    const legacyId = /^tg-(.+)-(\d+)$/.exec(String(todo.id || ''))
+    let id = String(todo.id || '')
+
+    if (legacyId) {
+      id = createPublicTaskId(legacyId[1], Number(legacyId[2]))
+    } else if (!/^task-[a-f0-9]{16}$/.test(id)) {
+      id = `task-${crypto
+        .createHash('sha256')
+        .update(JSON.stringify(todo))
+        .digest('hex')
+        .slice(0, 16)}`
+    }
+
+    if (seen.has(id)) continue
+    seen.add(id)
+
+    const title = sanitizePublicText(todo.title)
+    if (!title) continue
+
+    sanitized.push({
+      id,
+      title,
+      course: sanitizePublicText(todo.course || 'General'),
+      type: todo.type || 'other',
+      dueDate: todo.dueDate || null,
+      notes: sanitizePublicText(todo.notes || ''),
+      createdAt: todo.createdAt || new Date().toISOString(),
+      completed: Boolean(todo.completed)
+    })
+  }
+
+  writeJson(TODOS_FILE, sanitized)
+  log(`Sanitized ${sanitized.length} task(s).`)
+  console.log(JSON.stringify(sanitized, null, 2))
+}
+
 async function runTest() {
   const fileIndex = process.argv.indexOf('--file')
   let sample =
@@ -869,13 +939,23 @@ async function runTest() {
   }
 
   log(`Extraction mode: ${LLM_KEY ? `AI (${LLM_MODEL})` : 'keyword rules'}`)
-  log(`Sample announcement: ${preview(sample, 200)}`)
+  log(`Sample announcement: ${preview(sanitizePublicText(sample), 200)}`)
   const tasks = await extractTasks(sample, new Date())
   console.log(JSON.stringify(tasks, null, 2))
   if (tasks.length === 0) log('No task detected.')
 }
 
 async function main() {
+  if (TEST_PII) {
+    await runPiiTest()
+    return
+  }
+
+  if (SANITIZE) {
+    await runSanitize()
+    return
+  }
+
   if (TEST) {
     await runTest()
     return

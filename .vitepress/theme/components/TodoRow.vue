@@ -8,7 +8,6 @@ interface Todo {
   type?: string
   dueDate?: string | null
   notes?: string
-  sourceLink?: string | null
 }
 
 const props = defineProps<{
@@ -81,14 +80,6 @@ const due = computed(() => {
 
       <div class="todo-meta">
         <span class="todo-due" :class="due.className">{{ due.label }}</span>
-        <a
-          v-if="todo.sourceLink"
-          :href="todo.sourceLink"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Open announcement
-        </a>
       </div>
     </div>
   </li>
@@ -195,14 +186,5 @@ const due = computed(() => {
 
 .todo-due.upcoming {
   color: var(--vp-c-text-2);
-}
-
-.todo-meta a {
-  color: var(--vp-c-brand-1);
-  text-decoration: none;
-}
-
-.todo-meta a:hover {
-  text-decoration: underline;
 }
 </style>
