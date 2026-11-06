@@ -1,0 +1,61 @@
+.vp-doc .subject-heading {
+  margin: 8px 0 24px;
+  border-top: none;
+  padding-top: 0;
+  text-align: center;
+  font-size: 24px;
+}
+
+.subject-buttons {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  max-width: 900px;
+  margin: 0 auto 48px;
+}
+
+.vp-doc .subject-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 16px 20px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  background-color: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  line-height: 1.5;
+  text-align: center;
+  text-decoration: none;
+  transition:
+    border-color 0.25s,
+    background-color 0.25s;
+}
+
+.vp-doc .subject-button:hover {
+  border-color: var(--vp-c-brand-1);
+  background-color: var(--vp-c-bg-alt);
+  color: var(--vp-c-text-1);
+  text-decoration: none;
+}
+
+.vp-doc .subject-button .subject-ar {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.vp-doc .subject-button .subject-en {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--vp-c-text-2);
+}
+
+.schedule-page .vp-doc table {
+  direction: rtl;
+}
+
+.schedule-page .vp-doc th,
+.schedule-page .vp-doc td {
+  text-align: right;
+}
