@@ -8,6 +8,7 @@
 
 * [محاضرة 1: Real-Time Systems RTS(1) (PDF)](/realtimesystems/RTS(1).pdf)
 * [محاضرة 2: Real-Time Systems RTS(2) (PDF)](/realtimesystems/RTS(2).pdf)
+* [محاضرة 3: Real-Time Systems RTS(3) (PDF)](/realtimesystems/RTS(3).pdf)
 
 ---
 
@@ -28,5 +29,16 @@
   <p>
     المتصفح لا يدعم العرض المباشر لملفات PDF.
     <a href="/unicompeng/realtimesystems/RTS(2).pdf" target="_blank">اضغط هنا لتحميل المحاضرة الثانية</a>.
+  </p>
+</object>
+
+---
+
+## استعراض المحاضرة الثالثة (Lecture 3: RTS(3))
+
+<object data="/unicompeng/realtimesystems/RTS(3).pdf" type="application/pdf" width="100%" height="700px" style="border-radius: 8px; border: 1px solid var(--vp-c-divider);">
+  <p>
+    المتصفح لا يدعم العرض المباشر لملفات PDF.
+    <a href="/unicompeng/realtimesystems/RTS(3).pdf" target="_blank">اضغط هنا لتحميل المحاضرة الثالثة</a>.
   </p>
 </object>
