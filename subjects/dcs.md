@@ -9,6 +9,7 @@
 * [محاضرة 1: DCS (Part 1) (PDF)](/digitalcommunication/DCS(1).pdf)
 * [محاضرة 2: DCS (Part 2) (PDF)](/digitalcommunication/DCS(2).pdf)
 * [محاضرة 3: DCS (Part 3) (PDF)](/digitalcommunication/DCS(3).pdf)
+* [محاضرة 4: DCS Part 4 — PCM (PDF)](/digitalcommunication/DCS(4).pdf)
 
 ---
 
@@ -40,5 +41,16 @@
   <p>
     المتصفح لا يدعم العرض المباشر لملفات PDF.
     <a href="/unicompeng/digitalcommunication/DCS(3).pdf" target="_blank">اضغط هنا لتحميل المحاضرة الثالثة</a>.
+  </p>
+</object>
+
+---
+
+## استعراض المحاضرة الرابعة (Lecture 4: DCS Part 4 — PCM)
+
+<object data="/unicompeng/digitalcommunication/DCS(4).pdf" type="application/pdf" width="100%" height="700px" style="border-radius: 8px; border: 1px solid var(--vp-c-divider);">
+  <p>
+    المتصفح لا يدعم العرض المباشر لملفات PDF.
+    <a href="/unicompeng/digitalcommunication/DCS(4).pdf" target="_blank">اضغط هنا لتحميل المحاضرة الرابعة</a>.
   </p>
 </object>
