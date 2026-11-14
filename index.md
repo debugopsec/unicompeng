@@ -7,25 +7,6 @@ hero:
   tagline: Everything you need for your computer engineering courses, in one place.
 ---
 
-<h2 class="subject-heading">روابط سريعة (Quick Links)</h2>
-
-<div class="quick-links">
-  <a class="quick-link" href="/unicompeng/schedule.html">
-    <span class="quick-link-icon" aria-hidden="true">🗓️</span>
-    <span class="quick-link-copy">
-      <span class="quick-link-ar">الجدول الدراسي</span>
-      <span class="quick-link-en">Class Schedule</span>
-    </span>
-  </a>
-  <a class="quick-link" href="/unicompeng/todo.html">
-    <span class="quick-link-icon" aria-hidden="true">✅</span>
-    <span class="quick-link-copy">
-      <span class="quick-link-ar">قائمة المهام</span>
-      <span class="quick-link-en">To-Do List</span>
-    </span>
-  </a>
-</div>
-
 <h2 class="subject-heading">المواد الدراسية (Subjects)</h2>
 
 <div class="subject-buttons">
